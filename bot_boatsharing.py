@@ -39,9 +39,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Токен и настройки
-TOKEN = ''  # ⬅️ Замени на реальный токен
-GOOGLE_SHEET_NAME = ''
-GOOGLE_CREDENTIALS_FILE = ''
+import os
+
+# Получение переменных окружения
+TOKEN = os.getenv("TOKEN")  # Например: ""
+GOOGLE_SHEET_NAME = os.getenv("GOOGLE_SHEET_NAME")  # Например: ""
+GOOGLE_CREDENTIALS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON")  # JSON из credentials.json как строка
 
 # Список администраторов, которым будут приходить уведомления
 ADMINS = [
@@ -65,9 +68,17 @@ FIO, BIRTH_DATE, DRIVER_LICENSE, BOAT_LICENSE, BOAT_TRAINING, RENT_DATE, PHONE_N
 
 # Авторизация в Google Sheets
 def authorize_google_sheets():
-    scope = ['https://spreadsheets.google.com/feeds  ', 'https://www.googleapis.com/auth/drive  ']
+    scope = ['https://spreadsheets.google.com/feeds ', 'https://www.googleapis.com/auth/drive ']
     try:
-        creds = ServiceAccountCredentials.from_json_keyfile_name(GOOGLE_CREDENTIALS_FILE, scope)
+        if not GOOGLE_CREDENTIALS_JSON:
+            logger.error("❌ GOOGLE_CREDENTIALS_JSON не найден в переменных окружения")
+            return None
+
+        import json
+        from oauth2client.service_account import ServiceAccountCredentials
+
+        creds_dict = json.loads(GOOGLE_CREDENTIALS_JSON)
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
         logger.info("✅ Успешно авторизован в Google Sheets")
         return client
