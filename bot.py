@@ -2,7 +2,6 @@ import logging
 import asyncio
 import sys
 from datetime import datetime
-
 # Telegram
 from telegram import (
     Update,
@@ -19,18 +18,14 @@ from telegram.ext import (
     filters,
     CallbackContext
 )
-
 # Google Sheets
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-
 # Настройка асинхронного loop для Windows
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-
 # Скрытие лишних логов httpx
 logging.getLogger("httpx").setLevel(logging.WARNING)
-
 # Логирование
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -38,18 +33,34 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Токен и настройки
-import os
-
 # Получение переменных окружения
-TOKEN = os.getenv("TOKEN")  # Например: ""
-GOOGLE_SHEET_NAME = os.getenv("GOOGLE_SHEET_NAME")  # Например: ""
-GOOGLE_CREDENTIALS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON")  # JSON из credentials.json как строка
+TOKEN = os.getenv("TOKEN")  # ⬅️ Берётся из переменной окружения
+GOOGLE_SHEET_NAME = os.getenv("GOOGLE_SHEET_NAME")
+GOOGLE_CREDENTIALS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON")
 
-# Список администраторов, которым будут приходить уведомления
+# Авторизация в Google Sheets
+def authorize_google_sheets():
+    scope = ['https://spreadsheets.google.com/feeds ', 'https://www.googleapis.com/auth/drive ']
+    try:
+        if not GOOGLE_CREDENTIALS_JSON:
+            logger.error("❌ GOOGLE_CREDENTIALS_JSON не найден в переменных окружения")
+            return None
+
+        creds_dict = json.loads(GOOGLE_CREDENTIALS_JSON)
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+        client = gspread.authorize(creds)
+        logger.info("✅ Успешно авторизован в Google Sheets")
+        return client
+    except Exception as e:
+        logger.error(f"❌ Ошибка при авторизации в Google Sheets: {e}")
+        return None
+
+client = authorize_google_sheets()
+
+# Список администраторов (ID или @username)
 ADMINS = [
     "7638667975",         # ID админа (рекомендуется использовать ID)
-    "1470547573", 
+    "1470547573",
 ]
 
 # Словарь для отображения ключей на понятные названия
@@ -65,29 +76,6 @@ FIELD_NAMES = {
 
 # Состояния диалога
 FIO, BIRTH_DATE, DRIVER_LICENSE, BOAT_LICENSE, BOAT_TRAINING, RENT_DATE, PHONE_NUMBER, CONFIRM = range(8)
-
-# Авторизация в Google Sheets
-def authorize_google_sheets():
-    scope = ['https://spreadsheets.google.com/feeds ', 'https://www.googleapis.com/auth/drive ']
-    try:
-        if not GOOGLE_CREDENTIALS_JSON:
-            logger.error("❌ GOOGLE_CREDENTIALS_JSON не найден в переменных окружения")
-            return None
-
-        import json
-        from oauth2client.service_account import ServiceAccountCredentials
-
-        creds_dict = json.loads(GOOGLE_CREDENTIALS_JSON)
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-        client = gspread.authorize(creds)
-        logger.info("✅ Успешно авторизован в Google Sheets")
-        return client
-    except Exception as e:
-        logger.error(f"❌ Ошибка при авторизации в Google Sheets: {e}")
-        return None
-
-
-client = authorize_google_sheets()
 
 # Клавиатура для повторной заявки
 retry_keyboard = InlineKeyboardMarkup([
@@ -108,12 +96,11 @@ boat_license_buttons = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
-
 # Приветственное сообщение с кнопкой
 async def welcome(update: Update, context: CallbackContext):
     keyboard = [
         [InlineKeyboardButton("Начать оформление заявки", callback_data='start_booking')],
-        [InlineKeyboardButton("📜 Правила управления судном", url='https://64.mchs.gov.ru/uploads/resource/2021-07-01/normativno-pravovye-akty_1625137914639753523.pdf  ')]
+        [InlineKeyboardButton("📜 Правила управления судном", url='https://64.mchs.gov.ru/uploads/resource/2021-07-01/normativno-pravovye-akty_1625137914639753523.pdf ')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
@@ -127,7 +114,6 @@ async def welcome(update: Update, context: CallbackContext):
     )
     return ConversationHandler.END
 
-
 # Начало оформления заявки
 async def start_booking(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
@@ -135,13 +121,11 @@ async def start_booking(update: Update, context: CallbackContext) -> int:
     await query.edit_message_text("📝 Введите ваше ФИО (полностью):")
     return FIO
 
-
 # ФИО
 async def fio(update: Update, context: CallbackContext) -> int:
     context.user_data['fio'] = update.message.text
     await update.message.reply_text("📅 Введите дату рождения и возраст:\nПример: 01.01.1990, 35")
     return BIRTH_DATE
-
 
 # Дата рождения и возраст
 async def birth_date(update: Update, context: CallbackContext) -> int:
@@ -161,12 +145,11 @@ async def birth_date(update: Update, context: CallbackContext) -> int:
         context.user_data['age'] = age
         keyboard = [['✅ Да', '❌ Нет']]
         reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
-        await update.message.reply_text("🪪 Есть ли у вас водительское удостоверение на право управления автомобилем?", reply_markup=reply_markup)
+        await update.message.reply_text("🪪 Есть ли у вас водительское удостоверение?", reply_markup=reply_markup)
         return DRIVER_LICENSE
     except ValueError:
         await update.message.reply_text("⚠️ Неверный формат возраста. Введите целое число.")
         return BIRTH_DATE
-
 
 # Водительские права
 async def driver_license(update: Update, context: CallbackContext) -> int:
@@ -181,12 +164,11 @@ async def driver_license(update: Update, context: CallbackContext) -> int:
     )
     return BOAT_LICENSE
 
-
 # Удостоверение на управление маломерным судном
 async def boat_license(update: Update, context: CallbackContext) -> int:
     answer = update.message.text.lower()
     context.user_data['boat_license'] = 'ДА' if 'да' in answer else 'НЕТ'
-    training_link = "https://64.mchs.gov.ru/uploads/resource/2021-07-01/normativno-pravovye-akty_1625137914639753523.pdf  "
+    training_link = "https://64.mchs.gov.ru/uploads/resource/2021-07-01/normativno-pravovye-akty_1625137914639753523.pdf "
     if context.user_data['boat_license'] == 'НЕТ':
         await update.message.reply_text(
             f"🛥 Для аренды судна необходимо пройти обучение:\n{training_link}",
@@ -197,7 +179,6 @@ async def boat_license(update: Update, context: CallbackContext) -> int:
         await update.message.reply_text("📅 Укажите желаемую дату и время аренды:")
         return RENT_DATE
 
-
 # Обучение по управлению маломерным судном
 async def boat_training(update: Update, context: CallbackContext) -> int:
     answer = update.message.text.strip()
@@ -206,7 +187,7 @@ async def boat_training(update: Update, context: CallbackContext) -> int:
         await update.message.reply_text("📅 Укажите желаемую дату и время аренды:")
         return RENT_DATE
     elif answer == '⏳ Ещё не прошёл':
-        training_link = "https://64.mchs.gov.ru/uploads/resource/2021-07-01/normativno-pravovye-akty_1625137914639753523.pdf  "
+        training_link = "https://64.mchs.gov.ru/uploads/resource/2021-07-01/normativno-pravovye-akty_1625137914639753523.pdf "
         await update.message.reply_text(
             f"🛥 Обучение обязательно. Пройдите его по ссылке:\n{training_link}",
             reply_markup=training_buttons
@@ -216,13 +197,11 @@ async def boat_training(update: Update, context: CallbackContext) -> int:
         await update.message.reply_text("⚠️ Пожалуйста, выберите один из вариантов ниже.", reply_markup=training_buttons)
         return BOAT_TRAINING
 
-
 # Желаемая дата аренды
 async def rent_date(update: Update, context: CallbackContext) -> int:
     context.user_data['rent_date'] = update.message.text
     await update.message.reply_text("📱 Введите свой телефонный номер:")
     return PHONE_NUMBER
-
 
 # Номер телефона
 async def phone_number(update: Update, context: CallbackContext) -> int:
@@ -244,7 +223,6 @@ async def phone_number(update: Update, context: CallbackContext) -> int:
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(summary, reply_markup=reply_markup, parse_mode='HTML')
     return CONFIRM
-
 
 # Подтверждение или отмена
 async def confirm(update: Update, context: CallbackContext) -> int:
@@ -273,28 +251,20 @@ async def confirm(update: Update, context: CallbackContext) -> int:
             ]
             sheet.append_row(row)
             logger.info(f"✅ Заявка успешно сохранена: {row}")
-            await query.edit_message_text(
-                "✅ <b>Ваша заявка успешно оформлена!</b>\n\n",
-                parse_mode='HTML',
-                reply_markup=retry_keyboard
-            )
-            # Отправка уведомления всем админам
-            summary_text = "🔔 Получена новая заявка:\n\n" # + "\n".join([f"{k}: {v}" for k, v in user_data.items()])
-        # Формируем текст с понятными названиями полей
+
+            # Формируем текст уведомления
+            summary_text = "🔔 Получена новая заявка:\n\n"
             for key, value in user_data.items():
-                # Если ключ есть в FIELD_NAMES, используем его название
-                display_name = FIELD_NAMES.get(key, key)  # Если ключ не найден, используем оригинальное имя
+                display_name = FIELD_NAMES.get(key, key)
                 summary_text += f"{display_name}: {value}\n"
 
+            # Рассылаем всем админам
             for admin in ADMINS:
                 try:
-                    await context.bot.send_message(
-                        chat_id=admin,
-                        text=summary_text
-                    )
+                    await context.bot.send_message(chat_id=admin, text=summary_text)
                     logger.info(f"📩 Уведомление отправлено администратору: {admin}")
                 except Exception as e:
-                    logger.error(f"❌ Не удалось отправить уведомление администратору {admin}: {e}")            
+                    logger.error(f"❌ Не удалось отправить уведомление администратору {admin}: {e}")
 
             await query.edit_message_text(
                 "✅ <b>Ваша заявка успешно оформлена!</b>\n\n"
@@ -305,14 +275,12 @@ async def confirm(update: Update, context: CallbackContext) -> int:
                 parse_mode='HTML',
                 reply_markup=retry_keyboard
             )
-            
         except Exception as e:
             logger.error(f"❌ Ошибка при сохранении: {e}")
             await query.edit_message_text("⚠️ Ошибка при сохранении данных.", reply_markup=retry_keyboard)
     else:
         await query.edit_message_text("❌ Заявка отменена.", reply_markup=retry_keyboard)
     return ConversationHandler.END
-
 
 # Отмена
 async def cancel(update: Update, context: CallbackContext) -> int:
@@ -321,7 +289,6 @@ async def cancel(update: Update, context: CallbackContext) -> int:
     await query.edit_message_text("❌ Заявка отменена.", reply_markup=retry_keyboard)
     return ConversationHandler.END
 
-
 # Хэндлер для случайных сообщений
 async def unknown(update: Update, context: CallbackContext):
     await update.message.reply_text(
@@ -329,7 +296,6 @@ async def unknown(update: Update, context: CallbackContext):
         "Нажмите \"Начать оформление заявки\", чтобы продолжить.",
         reply_markup=retry_keyboard
     )
-
 
 # Диалог
 conv_handler = ConversationHandler(
@@ -352,16 +318,17 @@ conv_handler = ConversationHandler(
     per_message=False
 )
 
-
 # Запуск бота
 def main():
+    if not TOKEN:
+        logger.error("❌ TOKEN не установлен в переменных окружения")
+        return
     application = ApplicationBuilder().token(TOKEN).build()
     application.add_handler(conv_handler)
     application.add_handler(MessageHandler(filters.TEXT & filters.COMMAND, welcome))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, welcome))
     logger.info("🚀 Бот запущен")
     application.run_polling()
-
 
 if __name__ == '__main__':
     main()
